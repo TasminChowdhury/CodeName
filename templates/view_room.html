@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+</head>
+<style>
+    #board_play {
+      float: left ;
+      width: 60% ;
+      background:#99c;
+      border-style: solid;
+    }
+    #global_chat {
+      float: right;
+      width: 38%;
+      background:#cc9;
+      border-style: solid;
+
+    }
+</style>
+<body>
+
+<h1>Welcome to Game room: {{ room.name }}</h1>
+<div id = 'container_upper'>
+    <div id = 'board_play'>
+        <button id="generate_board_btn" type="button">Generate Board</button>
+        <div id="board"></div>
+        <table>
+          <tr>
+            <td>
+              <form action="http://www.google.fr">
+                <input class="btn" type="button" formtarget="_blank" value="Start Timer (3mins)">
+              </form>
+            </td>
+            <td>00:03:00</td>
+          </tr>
+        </table>
+
+        <ul>
+            {% for member in room_members %}
+                {% if member.is_spy_master and member._id.username == current_user.username %}
+                    <h1>hi Spymaster</h1>
+                    <form id="Spymaster_Clue_form">
+                        <input type="text" id="clue_input" placeholder="Enter your Clue here">
+                        <button type="submit">Send</button>
+
+                        <button id="generate_board_clue_btn" type="button">Generate Board Clue</button>
+                        <div id="board_clue"></div>
+                    </form>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
+
+
+
+    <div id = 'global_chat'>
+        <h3>Chat room</h3>
+        <button type="button" id="load_older_messages_btn">Load Older Messages</button>
+
+        <div id="messages">
+            {% for message in messages %}
+                <div><b>{{ message.sender }}&nbsp;[{{ message.created_at }}]:&nbsp;</b> {{ message.text }}</div>
+            {% endfor %}
+        </div>
+        <form id="message_input_form">
+            <input type="text" id="message_input" placeholder="Enter your message here">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+</div>
+
+
+
+
+
+
+<div id = 'container-lower'>
+
+    <div id = 'Game_log'>
+        <button id="vote_end_game" type="button">Vote End Game</button>
+        <div id = 'members'>
+            <ul>
+                {% for member in room_members %}
+                    {% if member.is_spy_master%}
+                        <li>{{member._id.username}} {{member.color}} Spymaster</li>
+                    {% endif %}
+                    <li>{{member._id.username}} {{member.color}}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+    </div>
+
+
+
+</div>
+
+
+
+<div id="clues">
+    {% for c in clues %}
+        <div>[{{ c.color }}]:&nbsp;'Spymaster'<b>{{ c.sender }}&nbsp;'CLue'</b> {{ c.clue }}</div>
+    {% endfor %}
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+
+</body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+<script>
+    const socket = io.connect("http://127.0.0.1:5000");
+
+    socket.on('connect', function () {
+        socket.emit('join_room', {
+            username: "{{ username }}",
+            room: "{{ room._id }}"
+        });
+
+        let message_input = document.getElementById('message_input');
+
+        document.getElementById('message_input_form').onsubmit = function (e) {
+            e.preventDefault();
+            let message = message_input.value.trim();
+            if (message.length) {
+                socket.emit('send_message', {
+                    username: "{{ username }}",
+                    room: "{{ room._id }}",
+                    message: message
+                })
+            }
+            message_input.value = '';
+            message_input.focus();
+        }
+        let clue_input = document.getElementById('clue_input');
+        document.getElementById('Spymaster_Clue_form').onsubmit = function (e) {
+            e.preventDefault();
+            let clue = clue_input.value.trim();
+            if (clue.length) {
+                socket.emit('send_clue', {
+                    username: "{{ username }}",
+                    room: "{{ room._id }}",
+                    clue: clue
+                })
+            }
+            clue_input.value = '';
+            clue_input.focus();
+        }
+    });
+
+    let page = 0;
+
+    document.getElementById("load_older_messages_btn").onclick = (e) => {
+        page += 1;
+        fetch("/rooms/{{ room._id }}/messages?page=" + page, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => {
+            response.json().then(messages => {
+                messages.reverse().forEach(message => prepend_message(message.text, message.sender, message.created_at));
+            })
+        })
+    };
+    document.getElementById("generate_board_btn").onclick = (e) => {
+        var word_list = new Array();
+        fetch("/rooms/{{ room._id }}/board", {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => {
+<!--        response.json() returns data in jsonformat by a promise object-->
+            response.json().then(words => {
+<!--                console.log(words)-->
+                words.forEach(wordeach => word_list.push(wordeach));
+<!--                console.log(word_list)-->
+                create_table(word_list)
+            })
+        })
+    };
+    var clue_list = new Array();
+    document.getElementById("generate_board_clue_btn").onclick = (e) => {
+        var word_list = new Array();
+        fetch("/rooms/{{ room._id }}/board_clue", {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => {
+<!--        response.json() returns data in jsonformat by a promise object-->
+            response.json().then(words => {
+                words.forEach(wordeach => clue_list.push(wordeach));
+                create_clue_table(clue_list)
+            })
+        })
+    };
+    function Set(btn) {
+        console.log(btn)
+        var property = document.getElementById(btn);
+        if (clue_list[parseInt(btn)] === 'blue'){
+            property.style.backgroundColor = "#1E90FF"
+        } else if (clue_list[parseInt(btn)] === 'red') {
+            property.style.backgroundColor = "#FF0000"
+        } else if (clue_list[parseInt(btn)] === 'neutral') {
+            property.style.backgroundColor = "#FFE4C4"
+        }else{
+            property.style.backgroundColor = "#000000"
+        }
+
+    }
+    function create_table(word_list){
+        console.log(word_list)
+        var table = '';
+        var rows = 4;
+        var cols = 5;
+        for (var r = 0; r < rows; r++){
+            table += '<tr width ="300">';
+<!--            bgcolor = ''-->
+            for (var c = 0; c<cols;c++){
+                var idx = r*cols+c;
+                table += '<td> <Button id=' + idx.toString()  +' onclick ="Set(' + idx.toString()+ ')"' + '>' + word_list[idx] +  '</Button> </td>';
+            }
+            table += '</tr>';
+        }
+        document.getElementById("board").innerHTML = '<table border = 1>' + table + '</table>'
+    }
+
+    function create_clue_table(clue_list){
+        var table = '';
+        var rows = 4;
+        var cols = 5;
+        for (var r = 0; r < rows; r++){
+            table += '<tr>';
+            bgcolor = ""
+            for (var c = 0; c<cols;c++){
+                if (clue_list[r*cols+c] === 'blue'){
+                    bgcolor = "#1E90FF"
+                } else if (clue_list[r*cols+c] === 'red') {
+                    bgcolor = "#FF0000"
+                } else if (clue_list[r*cols+c] === 'neutral') {
+                    bgcolor = "#FFE4C4"
+                }else{
+                    bgcolor = "#000000"
+                }
+<!--                console.log(bgcolor)-->
+                table += '<td bgcolor=' + bgcolor + '>' + clue_list[r*cols+c] + '</td>';
+            }
+            table += '</tr>';
+        }
+        document.getElementById("board_clue").innerHTML = '<table border = 1>' + table + '</table>'
+    }
+    function prepend_message(message, username, created_at) {
+        const newNode = document.createElement('div');
+        newNode.innerHTML = `<b>${username}&nbsp;[${created_at}]:&nbsp;</b> ${message}`;
+        const messages_div = document.getElementById('messages');
+        messages_div.insertBefore(newNode, messages_div.firstChild);
+    }
+
+    window.onbeforeunload = function () {
+        socket.emit('leave_room', {
+            username: "{{ username }}",
+            room: "{{ room._id }}"
+        })
+    };
+
+    socket.on('receive_message', function (data) {
+        console.log(data);
+        const newNode = document.createElement('div');
+        newNode.innerHTML = `<b>${data.username}&nbsp;[${data.created_at}]:&nbsp;</b> ${data.message}`;
+        document.getElementById('messages').appendChild(newNode);
+    });
+
+
+    function toTimeString(seconds) {
+      return (new Date(seconds * 1000)).toUTCString().match(/(\d\d:\d\d:\d\d)/)[0];
+    }
+    function startTimer() {
+      var nextElem = $(this).parents('td').next();
+      var duration = nextElem.text();
+      var a = duration.split(':');
+      var seconds = (+a[0]) * 60 * 60 + (+a[1]) * 60 + (+a[2]);
+      setInterval(function() {
+        seconds--;
+        if (seconds >= 0) {
+          nextElem.html(toTimeString(seconds));
+        }
+        if (seconds === 0) {
+          alert('sorry, out of time');
+          clearInterval(seconds);
+        }
+      }, 1000);
+    }
+    $('.btn').on('click', startTimer);
+
+
+    socket.on('receive_clue', function (data) {
+        console.log(data);
+        const newNode = document.createElement('div');
+        newNode.innerHTML = `<b>${data.username}&nbsp;[${data.color}]:&nbsp;</b> ${data.clue}`;
+        document.getElementById('clues').appendChild(newNode);
+    });
+
+    socket.on('join_room_announcement', function (data) {
+        console.log(data);
+        if (data.username !== "{{ username }}") {
+            const newNode = document.createElement('div');
+            newNode.innerHTML = `<b>${data.username}</b> has joined the room`;
+            document.getElementById('messages').appendChild(newNode);
+        }
+    });
+
+    socket.on('leave_room_announcement', function (data) {
+        console.log(data);
+        const newNode = document.createElement('div');
+        newNode.innerHTML = `<b>${data.username}</b> has left the room`;
+        document.getElementById('messages').appendChild(newNode);
+    });
+</script>
+</html>
